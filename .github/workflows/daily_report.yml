@@ -23,7 +23,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests pandas openpyxl google-api-python-client google-auth
+        pip install requests pandas openpyxl google-api-python-client google-auth python-dotenv
 
     - name: Run daily scraping pipeline
       env:
