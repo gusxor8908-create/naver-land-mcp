@@ -29,6 +29,21 @@ from config import (
 _JWT_PATTERN = re.compile(r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")
 
 
+def _get_curl_path() -> str:
+    """실행 중인 OS 환경에 맞추어 사용 가능한 curl 명령어/파일 경로를 반환합니다."""
+    import platform
+    import os
+    import shutil
+    
+    if platform.system() == "Windows":
+        path = "C:\\Windows\\System32\\curl.exe"
+        if os.path.exists(path):
+            return path
+        return shutil.which("curl") or "curl"
+    else:
+        return shutil.which("curl") or "curl"
+
+
 class NaverLandClient:
     """네이버 부동산 API 클라이언트. 세션/토큰 생명주기 관리."""
 
@@ -48,8 +63,8 @@ class NaverLandClient:
         # 쿠키 디렉토리 생성
         os.makedirs(SNAPSHOT_DIR, exist_ok=True)
         
-        # Windows 내장 curl.exe 절대 경로 사용
-        curl_bin = "C:\\Windows\\System32\\curl.exe"
+        # OS별 호환 가능한 curl 경로 사용
+        curl_bin = _get_curl_path()
         cmd = [
             curl_bin,
             "-s",
@@ -99,7 +114,7 @@ class NaverLandClient:
             query_str = "?" + urllib.parse.urlencode(params)
         full_url = f"{url}{query_str}"
 
-        curl_bin = "C:\\Windows\\System32\\curl.exe"
+        curl_bin = _get_curl_path()
 
         for attempt in range(MAX_RETRIES):
             try:
