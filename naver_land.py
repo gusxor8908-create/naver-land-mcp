@@ -22,6 +22,8 @@ from config import (
     REQUEST_TIMEOUT_SEC,
     RETRY_DELAY_SEC,
     USER_AGENT,
+    COOKIE_PATH,
+    SNAPSHOT_DIR,
 )
 
 _JWT_PATTERN = re.compile(r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")
@@ -35,21 +37,44 @@ class NaverLandClient:
         self._jwt: Optional[str] = None
 
     def _ensure_session(self) -> None:
-        """Session + JWT 확보. 최초 호출 시 메인 페이지에서 토큰 추출."""
-        if self._session is not None and self._jwt is not None:
+        """Session + JWT 확보. 최초 호출 시 메인 페이지에서 토큰 추출 및 쿠키 저장."""
+        if self._jwt is not None:
             return
-        sess = requests.Session()
-        sess.headers.update({
-            "User-Agent": USER_AGENT,
-            "Accept-Language": "ko-KR,ko;q=0.9",
-        })
-        r = sess.get(MAIN_PAGE_URL, timeout=REQUEST_TIMEOUT_SEC)
-        r.raise_for_status()
-        tokens = _JWT_PATTERN.findall(r.text)
+        
+        import os
+        import subprocess
+        import re
+        
+        # 쿠키 디렉토리 생성
+        os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+        
+        # Windows 내장 curl.exe 절대 경로 사용
+        curl_bin = "C:\\Windows\\System32\\curl.exe"
+        cmd = [
+            curl_bin,
+            "-s",
+            "-c", COOKIE_PATH,
+            "-A", USER_AGENT,
+            "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "-H", "Accept-Language: ko-KR,ko;q=0.9",
+            "-H", f"Referer: {MAIN_PAGE_URL}",
+            MAIN_PAGE_URL
+        ]
+        
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="ignore")
+            if res.returncode != 0 or not res.stdout:
+                raise RuntimeError(f"curl.exe 실행 실패: {res.stderr}")
+            html_text = res.stdout
+        except Exception as e:
+            raise RuntimeError(f"네이버 부동산 메인페이지 토큰 획득 실패 (curl): {str(e)}")
+            
+        tokens = _JWT_PATTERN.findall(html_text)
         if not tokens:
             raise RuntimeError("네이버 부동산 메인페이지에서 JWT 토큰을 찾지 못했습니다.")
-        self._session = sess
         self._jwt = tokens[0]
+        # 타 모듈 참조 호환성을 위해 dummy session 객체 주입
+        self._session = requests.Session()
 
     def _headers(self) -> dict:
         assert self._jwt is not None
@@ -59,34 +84,66 @@ class NaverLandClient:
         }
 
     def _get(self, path: str, params: Optional[dict] = None) -> dict:
-        """Rate limiting + 429 재시도 포함 GET 요청."""
+        """Rate limiting + 429 재시도 포함 GET 요청 (curl.exe 활용 + 쿠키 전달)."""
         self._ensure_session()
-        assert self._session is not None
+
+        import urllib.parse
+        import subprocess
+        import json
 
         url = f"{API_BASE}{path}"
         last_exc: Optional[Exception] = None
 
+        query_str = ""
+        if params:
+            query_str = "?" + urllib.parse.urlencode(params)
+        full_url = f"{url}{query_str}"
+
+        curl_bin = "C:\\Windows\\System32\\curl.exe"
+
         for attempt in range(MAX_RETRIES):
             try:
-                resp = self._session.get(
-                    url,
-                    params=params,
-                    headers=self._headers(),
-                    timeout=REQUEST_TIMEOUT_SEC,
-                )
-                if resp.status_code == 429:
-                    time.sleep(RETRY_DELAY_SEC)
-                    continue
-                resp.raise_for_status()
-                data = resp.json()
-                # 네이버 API는 200이어도 error 필드를 반환할 수 있음
+                cmd = [
+                    curl_bin,
+                    "-s",
+                    "-b", COOKIE_PATH,
+                    "-A", USER_AGENT,
+                    "-H", "Accept: application/json, text/plain, */*",
+                    "-H", "Accept-Language: ko-KR,ko;q=0.9",
+                    "-H", f"Referer: {MAIN_PAGE_URL}",
+                    "-H", f"Authorization: Bearer {self._jwt}",
+                    full_url
+                ]
+                
+                res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="ignore")
+                if res.returncode != 0:
+                    raise RuntimeError(f"curl.exe API 호출 실패: {res.stderr}")
+                
+                # 가끔 WAF에 의해 404/429 redirect 시 json 파싱 에러 발생 가능
+                try:
+                    data = json.loads(res.stdout)
+                except json.JSONDecodeError:
+                    if "Found. Redirecting" in res.stdout or "Redirecting" in res.stdout:
+                        # WAF 리다이렉트 (429 차단 등으로 추정)
+                        time.sleep(RETRY_DELAY_SEC)
+                        continue
+                    raise RuntimeError(f"JSON 파싱 실패 (응답이 올바른 JSON이 아님): {res.stdout[:200]}...")
+
+                if isinstance(data, dict) and data.get("success") is False:
+                    code = data.get("code", "?")
+                    msg = data.get("message", "?")
+                    if code == "TOO_MANY_REQUESTS":
+                        time.sleep(RETRY_DELAY_SEC * 2)  # 차단이므로 조금 더 대기
+                        continue
+                    raise RuntimeError(f"API 오류 {code}: {msg} (path={path})")
+
                 if isinstance(data, dict) and data.get("error"):
                     err = data["error"]
                     raise RuntimeError(
                         f"API 오류 {err.get('code')}: {err.get('message')} (path={path})"
                     )
                 return data
-            except requests.RequestException as e:
+            except Exception as e:
                 last_exc = e
                 time.sleep(RETRY_DELAY_SEC)
 
@@ -165,6 +222,7 @@ class NaverLandClient:
                 "householdCount": py.get("householdCountByPyeong", ""),
                 "roomCnt": py.get("roomCnt", ""),
                 "bathroomCnt": py.get("bathroomCnt", ""),
+                "entranceType": py.get("entranceType", ""),
             }
 
             # 호가 범위 (articleStatistics)
@@ -447,7 +505,7 @@ def crawl_district(
             f"{region_name}은 범위가 너무 넓습니다. 구/군/동 단위로 지정해주세요."
         )
 
-    max_total = DEFAULT_MAX_COMPLEXES * 5  # 전체 단지 상한 (25개)
+    max_total = 100  # 전체 단지 상한 (100개로 확장)
     deal_key = {"A1": "dealCount", "B1": "leaseCount", "B2": "rentCount"}.get(
         trade_type, "dealCount"
     )

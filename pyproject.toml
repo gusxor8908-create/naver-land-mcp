@@ -9,6 +9,8 @@ dependencies = [
     "mcp[cli]>=1.0",
     "fastmcp>=0.4",
     "requests>=2.31",
+    "google-api-python-client>=2.111.0",
+    "google-auth>=2.25.0",
 ]
 
 [tool.uv]

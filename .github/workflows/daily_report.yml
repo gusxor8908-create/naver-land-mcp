@@ -1,0 +1,37 @@
+name: Seoul Apartment Daily Report Scraper
+
+on:
+  schedule:
+    # 매일 KST 10:00 실행 (UTC 01:00)
+    - cron: '0 1 * * *'
+  workflow_dispatch: # 수동 기동 지원
+
+jobs:
+  run-scraper:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pandas openpyxl google-api-python-client google-auth
+
+    - name: Run daily scraping pipeline
+      env:
+        SMTP_USER: ${{ secrets.SMTP_USER }}
+        SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        SMTP_TO: ${{ secrets.SMTP_TO }}
+        GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+        GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        DISABLE_KAKAO: '1' # 클라우드 환경에서는 카카오톡 전송을 건너뜁니다
+      run: |
+        python -u naver-land-mcp/scripts/daily_report.py
