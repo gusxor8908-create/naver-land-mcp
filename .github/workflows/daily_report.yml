@@ -37,4 +37,4 @@ jobs:
         GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         DISABLE_KAKAO: '1' # 클라우드 환경에서는 카카오톡 전송을 건너뜁니다
       run: |
-        python -u naver-land-mcp/scripts/daily_report.py
+        python -u scripts/daily_report.py
