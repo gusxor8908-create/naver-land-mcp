@@ -261,14 +261,14 @@ def run_daily_scraping() -> None:
         # 가격 조건 (6억 이하) 검증 추가
         price = fmt.get("price")
         if price and price <= 60000:
-            if 66.0 <= excl <= 85.0:
+            if 49.5 <= excl <= 85.0:
                 fmt["_isEstimatedArea"] = is_estimated
                 if is_estimated:
                     fmt["areaExclusive"] = excl
                 filtered_articles.append(fmt)
             
     n_area = len(filtered_articles)
-    print(f"면적 필터(66~85㎡) 통과 매물 수: {n_area}건")
+    print(f"면적 필터(49.5~85㎡) 통과 매물 수: {n_area}건")
 
     # 4. 단지 상세 조회 — 세대수(300세대 이상) 검증
     # 캐시 적용 (단지 중복 호출 방지)
@@ -409,7 +409,7 @@ def run_daily_scraping() -> None:
     summary_header = f"""🏠 서울 아파트 매물 일일 리포트
 📅 {today_str} (오전 10:00)
 ────────────────────
-조건: 6억↓ | 66~85㎡(추정 포함) | 300세대↑ | 대중교통 15분↓
+조건: 6억↓ | 49.5~85㎡(추정 포함) | 300세대↑ | 대중교통 15분↓
 탐색: 서울 25개 구 → 매물 {n_total}건 → 면적필터 {n_area}건
      → 단지검증 {n_pass}건 → 추천 {n_final}건
 
