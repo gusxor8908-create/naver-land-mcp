@@ -1,6 +1,11 @@
 """설정 상수: API URL, 헤더, 거래 유형, 기본값."""
 
 import os
+from dotenv import load_dotenv
+
+# .env 파일 로드
+current_dir = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(dotenv_path=os.path.join(current_dir, ".env"))
 
 API_BASE = "https://new.land.naver.com/api"
 MAIN_PAGE_URL = "https://new.land.naver.com/complexes"
@@ -71,6 +76,17 @@ COOKIE_PATH = os.path.join(SNAPSHOT_DIR, "cookies.txt")
 
 # 카카오톡 글자수 제한 (mcp-gateway KakaotalkChat-MemoChat 제한 기준)
 KAKAO_MAX_CHARS = 200
+
+# 공공데이터포털 API 관련 설정
+DATA_GO_KR_API_KEY = os.environ.get("DATA_GO_KR_API_KEY", "")
+SEOUL_OPENAPI_KEY = os.environ.get("SEOUL_OPENAPI_KEY", "")
+
+# 빌라 검색 필터 기준 (재개발/가로주택)
+VILLA_PRICE_MAX = 40000            # 4억 미만 (만원 단위)
+VILLA_AREA_MIN = 50.0              # 전용면적 50㎡ 이상
+VILLA_AREA_MAX = 84.0              # 전용면적 84㎡ 이하
+VILLA_BUILD_YEAR_MIN = 2010        # 2010년 이후 준공
+VILLA_LAND_SHARE_MIN = 25.0        # 토지지분 25㎡ 이상
 
 # 지역코드는 네이버 검색 API (/search) 로 동적 조회 — 하드코딩 제거.
 # naver_land.resolve_region() / crawl_district() 참조.

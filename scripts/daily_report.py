@@ -21,6 +21,7 @@ from config import REPORTS_DIR, KAKAO_MAX_CHARS, SNAPSHOT_PATH
 from naver_land import crawl_district, get_complex_detail, get_complex_prices
 from filter import format_article
 from snapshot import compare_with_previous
+from redevelopment import collect_redevelopment_villas
 
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(parent_dir, ".env"))
@@ -441,7 +442,11 @@ def run_daily_scraping() -> None:
 
     # 10. 엑셀 파일 저장 및 드라이브/이메일 연동
     try:
-        excel_path = save_to_excel(final_recommendations, today_str)
+        # 재개발/가로주택 빌라 추천 매물 수집 진행
+        print(f"[{datetime.now().isoformat()}] 재개발 및 가로주택 빌라 매물 조회를 시작합니다...")
+        villas_list = collect_redevelopment_villas()
+        
+        excel_path = save_to_excel(final_recommendations, villas_list, today_str)
         if excel_path and os.path.exists(excel_path):
             upload_to_google_drive(excel_path, today_str)
             send_email_report(excel_path, today_str)
@@ -449,12 +454,13 @@ def run_daily_scraping() -> None:
         print(f"[오류] 엑셀 저장 및 연동 작업 실패: {str(e)}", file=sys.stderr)
 
 
-def save_to_excel(final_recommendations: list[dict], today_str: str) -> None:
-    """수집된 추천 매물 리스트를 엑셀 파일로 저장합니다."""
+def save_to_excel(final_recommendations: list[dict], villas: list[dict], today_str: str) -> str | None:
+    """수집된 추천 아파트와 빌라 매물 리스트를 엑셀 파일의 서로 다른 시트에 저장합니다."""
     import pandas as pd
     from config import SNAPSHOT_DIR
 
-    rows = []
+    # 1. 아파트 데이터 프레임 구성
+    apt_rows = []
     for a in final_recommendations:
         detail = a.get("_detail", {})
         
@@ -482,7 +488,6 @@ def save_to_excel(final_recommendations: list[dict], today_str: str) -> None:
         approve_ymd = detail.get("useApproveYmd") or "-"
         household = f"{a.get('_household')}세대" if a.get("_household") else "-"
         
-        # 건설사 추정
         name = a.get("name", "")
         const_company = "-"
         for brand, comp in BRAND_CONSTRUCTION_MAP.items():
@@ -503,13 +508,12 @@ def save_to_excel(final_recommendations: list[dict], today_str: str) -> None:
         price_str = format_price_korean(a.get("price"))
         short_link = f"m.land.naver.com/article/info/{a.get('articleNo')}"
         
-        # 평형별 상세 데이터
         target_pyeong = a.get("_targetPyeong") or {}
         room_cnt = target_pyeong.get("roomCnt") or "-"
         bathroom_cnt = target_pyeong.get("bathroomCnt") or "-"
         entrance_type = target_pyeong.get("entranceType") or "-"
 
-        row_dict = {
+        apt_rows.append({
             "수집일시": datetime.now().strftime("%H:%M"),
             "매물명": name,
             "지역": gu,
@@ -536,20 +540,48 @@ def save_to_excel(final_recommendations: list[dict], today_str: str) -> None:
             "건설사": const_company,
             "평점": a.get("_score", "-"),
             "매물URL링크": f"https://{short_link}"
-        }
-        rows.append(row_dict)
+        })
 
-    if not rows:
-        print("[정보] 추천 매물이 없어 엑셀 파일을 생성하지 않습니다.")
+    # 2. 빌라 데이터 프레임 구성
+    villa_rows = []
+    for v in villas:
+        price_str = format_price_korean(v.get("price"))
+        
+        villa_rows.append({
+            "수집일시": datetime.now().strftime("%H:%M"),
+            "사업구역명": v.get("zone_name"),
+            "사업유형": v.get("biz_type"),
+            "진행단계": v.get("stage"),
+            "매물명(건물명)": v.get("name"),
+            "법정동주소": v.get("address"),
+            "가격(만원)": v.get("price"),
+            "가격(한글)": price_str,
+            "전용면적(㎡)": v.get("area"),
+            "준공연도": v.get("build_year"),
+            "토지지분율(추정, ㎡)": v.get("land_share"),
+            "불법건축물": v.get("is_violation"),
+            "근저당": v.get("collateral"),
+            "계약일": v.get("deal_date"),
+            "층수": v.get("floor")
+        })
+
+    if not apt_rows and not villa_rows:
+        print("[정보] 추천 아파트 및 빌라 매물이 모두 없어 엑셀 파일을 생성하지 않습니다.")
         return None
 
-    df = pd.DataFrame(rows)
+    df_apt = pd.DataFrame(apt_rows) if apt_rows else pd.DataFrame(columns=["수집일시", "매물명", "지역", "가격(만원)", "가격(한글)"])
+    df_villa = pd.DataFrame(villa_rows) if villa_rows else pd.DataFrame(columns=["수집일시", "사업구역명", "사업유형", "진행단계", "매물명(건물명)"])
+
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
     excel_filename = f"report_{today_str}.xlsx"
     excel_path = os.path.join(SNAPSHOT_DIR, excel_filename)
     
-    df.to_excel(excel_path, index=False)
-    print(f"[엑셀 저장 완료] {excel_path} ({len(df)}건)")
+    # ExcelWriter를 활용해 다중 시트 저장 실행
+    with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+        df_apt.to_excel(writer, sheet_name="아파트 추천매물", index=False)
+        df_villa.to_excel(writer, sheet_name="빌라_재개발매물", index=False)
+        
+    print(f"[엑셀 저장 완료] {excel_path} (아파트: {len(df_apt)}건, 빌라: {len(df_villa)}건)")
     return excel_path
 
 

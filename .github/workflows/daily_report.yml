@@ -35,6 +35,8 @@ jobs:
         SMTP_TO: ${{ secrets.SMTP_TO }}
         GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
         GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+        SEOUL_OPENAPI_KEY: ${{ secrets.SEOUL_OPENAPI_KEY }}
         DISABLE_KAKAO: '1' # 클라우드 환경에서는 카카오톡 전송을 건너뜁니다
       run: |
         python -u scripts/daily_report.py
